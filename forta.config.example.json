@@ -1,0 +1,5 @@
+{
+    "jsonRpcUrl": "https://eth-mainnet.alchemyapi.io/v2/<YOUR_ID_HERE>" ,                     
+    "debug": true                          
+  }
+  

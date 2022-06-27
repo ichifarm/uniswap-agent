@@ -1,26 +1,23 @@
-const BigNumber = require('bignumber.js');
+const BigNumber = require("bignumber.js");
 const {
-  Finding, FindingSeverity, FindingType, getJsonRpcUrl,
-} = require('forta-agent');
+  Finding,
+  FindingSeverity,
+  FindingType,
+  getJsonRpcUrl,
+} = require("forta-agent");
 
 // use ethers.js for contracts, interfaces, and provider
-const ethers = require('ethers');
-
-// use axios for external API GET requests
-const axios = require('axios');
+const ethers = require("ethers");
 
 // load any agent configuration parameters
-const config = require('../agent-config.json');
+const config = require("../agent-config.json");
 
 // load contract addresses
-const contractAddresses = require('../contract-addresses.json');
+const contractAddresses = require("../contract-addresses.json");
 
 // load contract ABIs
-const { abi: factoryAbi } = require('../abi/UniswapV3Factory.json');
-const { abi: uniswapV3PoolAbi } = require('../abi/UniswapV3Pool.json');
-
-// decimals() signature
-const DECIMALS_ABI = ['function decimals() view returns (uint8)'];
+const factoryAbi = require("../abi/ICHIVaultFactory.json");
+const vaultAbi = require("../abi/ICHIVault.json");
 
 // create object that will contain contracts, providers, interfaces, and configuration parameters
 const initializeData = {};
@@ -29,7 +26,6 @@ function provideInitialize(data) {
   return async function initialize() {
     // store the Everest ID for the UniswapV3 protocol
     /* eslint-disable no-param-reassign */
-    data.everestId = config.EVEREST_ID;
 
     // set up an ethers.js provider for interacting with contracts
     // getJsonRpcUrl() will return the JSON-RPC URL from forta.config.json
@@ -37,93 +33,106 @@ function provideInitialize(data) {
 
     // create an ethers.js Contract object for calling methods on the UniswapV3 factory contract
     data.factoryContract = new ethers.Contract(
-      contractAddresses.UniswapV3Factory.address,
+      contractAddresses.ICHIVaultFactory.address,
       factoryAbi,
-      data.provider,
+      data.provider
     );
 
-    // store the flash swap threshold as a BigNumber (NOT ethers.js BigNumber)
-    data.flashSwapThresholdUSDBN = new BigNumber(config.largeFlashSwap.thresholdUSD);
+    // store the deposit threshold as a BigNumber (NOT ethers.js BigNumber)
+    data.depositThresholdUSDBN = new BigNumber(
+      config.largeDeposit.thresholdUSD
+    );
+
+    // store the withdrawal threshold as a BigNumber (NOT ethers.js BigNumber)
+    data.withdrawalThresholdUSDBN = new BigNumber(
+      config.largeWithdrawal.thresholdUSD
+    );
 
     // store the UniswapV2Pool contract ABI for use later
-    data.poolAbi = uniswapV3PoolAbi;
+    data.vaultAbi = vaultAbi;
     /* eslint-enable no-param-reassign */
   };
-}
-
-async function getTokenPrices(token0Address, token1Address) {
-  const apiURL = 'https://api.coingecko.com/api/v3/simple/token_price/';
-  const idString = 'ethereum';
-  const addressString = `contract_addresses=${token0Address},${token1Address}`;
-  const currencyString = 'vs_currencies=usd';
-
-  const { data } = await axios.get(`${apiURL + idString}?${addressString}&${currencyString}`);
-
-  // parse the response and convert the prices to BigNumber.js type (NOT ethers.js BigNumber)
-  const usdPerToken0 = new BigNumber(data[token0Address.toLowerCase()].usd);
-  const usdPerToken1 = new BigNumber(data[token1Address.toLowerCase()].usd);
-
-  return { token0Price: usdPerToken0, token1Price: usdPerToken1 };
-}
-
-async function getValue(amountBN, tokenPrice, tokenAddress, provider) {
-  const contract = new ethers.Contract(tokenAddress, DECIMALS_ABI, provider);
-  const decimals = await contract.decimals();
-  const denominator = (new BigNumber(10)).pow(decimals);
-  return amountBN.times(tokenPrice).div(denominator);
 }
 
 function provideHandleTransaction(data) {
   return async function handleTransaction(txEvent) {
     // destructure the initialized data for use in handler
     const {
-      poolAbi, provider, factoryContract, everestId, flashSwapThresholdUSDBN,
+      vaultAbi: vaultAbi,
+      provider,
+      factoryContract,
+      depositThresholdUSDBN,
+      withdrawalThresholdUSDBN,
     } = data;
 
-    if (!factoryContract) throw new Error('handleTransaction called before initialization');
+    if (!factoryContract)
+      throw new Error("handleTransaction called before initialization");
 
     // initialize the findings Array
     const findings = [];
 
-    // check for logs containing the Flash event signature
-    const flashSignature = 'Flash(address,address,uint256,uint256,uint256,uint256)';
-    const flashSwapLogs = txEvent.filterEvent(flashSignature);
+    // check for logs containing the Deposit event signature {ICHI Vault}
+    const depositSignature = "Deposit(address,address,uint256,uint256,uint256)";
+    const depositLogs = txEvent.filterEvent(depositSignature);
 
-    // no flash swaps, no findings
-    if (flashSwapLogs.length > 0) {
+    // check for logs containing the Withdraw event signature {ICHI Vault}
+    const withdrawSignature = "Withdraw(address,address,uint256,uint256,uint256)";
+    const withdrawLogs = txEvent.filterEvent(withdrawSignature);
+
+    // no deposits to the vaults, no findings
+    if (depositLogs.length > 0) {
       // iterate over the logs containing Flash events and return an Array of promises
-      const flashSwapPromises = flashSwapLogs.map(async (flashSwapLog) => {
+      const depositPromises = depositLogs.map(async (depositLog) => {
         // destructure the log
-        const { address, data: eventData, topics } = flashSwapLog;
+        const { address, data: eventData, topics } = depositLog;
 
         // create an ethers.js Contract with the given address and the poolAbi
-        const poolContract = new ethers.Contract(address, poolAbi, provider);
+        const vaultContract = new ethers.Contract(address, vaultAbi, provider);
 
+        let deployer;
         let token0;
         let token1;
+        let fee;
+        let allowToken0;
+        let allowToken1;
         try {
-          // get the tokens and fee that define the Uniswap V3 pool
-          token0 = await poolContract.token0();
-          token1 = await poolContract.token1();
-          const fee = await poolContract.fee();
+          // get the parameters that define the ICHI Vault
+          deployer = await vaultContract.owner();
+          token0 = await vaultContract.token0();
+          token1 = await vaultContract.token1();
+          fee = await vaultContract.fee();
+          allowToken0 = await vaultContract.allowToken0();
+          allowToken1 = await vaultContract.allowToken1();
 
-          // use the Uniswap V3 factory to get the pool address based on the tokens and fee
-          const expectedAddress = await data.factoryContract.getPool(token0, token1, fee);
+          // Generate the key for ICHI Vault from data
+          const ichiVaultKey = await data.factoryContract.genKey(
+            deployer,
+            token1,
+            token0,
+            fee,
+            allowToken1,
+            allowToken0
+          );
+
+          // use the ICHI Vault Factory to get the pool address based on a key
+          const expectedAddress = await data.factoryContract.getICHIVault(
+            ichiVaultKey
+          );
 
           if (address.toLowerCase() !== expectedAddress.toLowerCase()) {
-            // if the addresses do not match, assume that this is not a Uniswap V3 Pool
+            // if the addresses do not match, assume that this is not an ICHI Vault
             return undefined;
           }
         } catch {
           // if an error was encountered calling contract methods
-          // assume that this is not a Uniswap V3 Pool
+          // assume that this is not a ICHI Vault
           return undefined;
         }
 
-        const tokenPrices = await getTokenPrices(token0, token1);
-
-        // parse the information from the flash swap
-        const { args: { sender, amount0, amount1 } } = poolContract.interface.parseLog({
+        // parse the information from the deposit invocation
+        const {
+          args: { sender, to, shares, amount0, amount1 },
+        } = vaultContract.interface.parseLog({
           data: eventData,
           topics,
         });
@@ -132,7 +141,7 @@ function provideHandleTransaction(data) {
         const amount0BN = new BigNumber(amount0.toHexString());
         const amount1BN = new BigNumber(amount1.toHexString());
 
-        const flashSwapData = {
+        const depositData = {
           address,
           amount0BN,
           amount1BN,
@@ -141,38 +150,34 @@ function provideHandleTransaction(data) {
           value1USDBN: new BigNumber(0),
         };
 
-        if (amount0BN.gt(0)) {
-          const value0USDBN = await getValue(amount0BN, tokenPrices.token0Price, token0, provider);
-          flashSwapData.value0USDBN = flashSwapData.value0USDBN.plus(value0USDBN);
-        }
-
-        if (amount1BN.gt(0)) {
-          const value1USDBN = await getValue(amount1BN, tokenPrices.token1Price, token1, provider);
-          flashSwapData.value1USDBN = flashSwapData.value1USDBN.plus(value1USDBN);
-        }
-
-        return flashSwapData;
+        return depositData;
       });
 
       // settle the promises
       // NOTE: Promise.all will fail fast on any rejected promises
       // Consider Promise.allSettled() to ensure that all promises settle (fulfilled or rejected)
-      let flashSwapResults = await Promise.all(flashSwapPromises);
+      let depositResults = await Promise.all(depositPromises);
 
+      console.log(depositResults[0].value1USDBN);
+      console.log(depositThresholdUSDBN);
+      
       // filter out undefined entries in the results
-      flashSwapResults = flashSwapResults.filter((result) => result !== undefined);
+      depositResults = depositResults.filter((result) => result !== undefined);
 
       // check each flash swap for any that exceeded the threshold value
-      flashSwapResults.forEach((result) => {
-        if (result.value0USDBN.plus(result.value1USDBN).gt(flashSwapThresholdUSDBN)) {
+      depositResults.forEach((result) => {
+        if (
+          result.amount0BN
+            .plus(result.amount1BN)
+            .gte(depositThresholdUSDBN)
+        ) {
           const finding = Finding.fromObject({
-            name: 'Forta Workshop 2: Uniswap V3 Large Flash Swap',
-            description: `Large Flash Swap from pool ${result.address}`,
-            alertId: 'AE-FORTA-WORKSHOP2-UNISWAPV3-LARGE-FLASH-SWAP',
+            name: "ICHI Depoit: Large Deposit Made",
+            description: `Large Deposit from pool ${result.address}`,
+            alertId: "ICHI Forta 1 - Large Deposit to AV Made",
             severity: FindingSeverity.Info,
             type: FindingType.Info,
-            protocol: 'UniswapV3',
-            everestId,
+            protocol: "ICHIV2",
             metadata: {
               address: result.address,
               token0Amount: result.amount0BN.toString(),
@@ -180,7 +185,120 @@ function provideHandleTransaction(data) {
               sender: result.sender,
               value0USD: result.value0USDBN.toString(),
               value1USD: result.value1USDBN.toString(),
-              flashSwapThresholdUSD: flashSwapThresholdUSDBN.toString(),
+              depositThresholdUSD: depositThresholdUSDBN.toString(),
+            },
+          });
+          findings.push(finding);
+        }
+      });
+    }
+
+    // no withdrawals from the vaults, no findings
+    if (withdrawLogs.length > 0) {
+      // iterate over the logs containing Flash events and return an Array of promises
+      const withdrawPromises = withdrawLogs.map(async (withdrawLog) => {
+        // destructure the log
+        const { address, data: eventData, topics } = withdrawLog;
+
+        // create an ethers.js Contract with the given address and the poolAbi
+        const vaultContract = new ethers.Contract(address, vaultAbi, provider);
+
+        let deployer;
+        let token0;
+        let token1;
+        let fee;
+        let allowToken0;
+        let allowToken1;
+        try {
+          // get the parameters that define the ICHI Vault
+          deployer = await vaultContract.owner();
+          token0 = await vaultContract.token0();
+          token1 = await vaultContract.token1();
+          fee = await vaultContract.fee();
+          allowToken0 = await vaultContract.allowToken0();
+          allowToken1 = await vaultContract.allowToken1();
+
+          // Generate the key for ICHI Vault from data
+          const ichiVaultKey = await data.factoryContract.genKey(
+            deployer,
+            token1,
+            token0,
+            fee,
+            allowToken1,
+            allowToken0
+          );
+
+          // use the ICHI Vault Factory to get the pool address based on a key
+          const expectedAddress = await data.factoryContract.getICHIVault(
+            ichiVaultKey
+          );
+
+          if (address.toLowerCase() !== expectedAddress.toLowerCase()) {
+            // if the addresses do not match, assume that this is not an ICHI Vault
+            return undefined;
+          }
+        } catch {
+          // if an error was encountered calling contract methods
+          // assume that this is not a ICHI Vault
+          return undefined;
+        }
+
+        // parse the information from the withdrawal invocation
+        const {
+          args: { sender, to, shares, amount0, amount1 },
+        } = vaultContract.interface.parseLog({
+          data: eventData,
+          topics,
+        });
+
+        // convert from ethers.js BigNumber to BigNumber.js
+        const amount0BN = new BigNumber(amount0.toHexString());
+        const amount1BN = new BigNumber(amount1.toHexString());
+
+        const withdrawData = {
+          address,
+          amount0BN,
+          amount1BN,
+          sender,
+          value0USDBN: new BigNumber(0),
+          value1USDBN: new BigNumber(0),
+        };
+
+        return withdrawData;
+      });
+
+      // settle the promises
+      // NOTE: Promise.all will fail fast on any rejected promises
+      // Consider Promise.allSettled() to ensure that all promises settle (fulfilled or rejected)
+      let withdrawResults = await Promise.all(withdrawPromises);
+
+      // filter out undefined entries in the results
+      withdrawResults = withdrawResults.filter(
+        (result) => result !== undefined
+      );
+
+      // check each flash swap for any that exceeded the threshold value
+      withdrawResults.forEach((result) => {
+        if (
+          result.amount0BN
+            .plus(result.amount1BN)
+            .gte(withdrawalThresholdUSDBN)
+        ) {
+          const finding = Finding.fromObject({
+            name: "ICHI Depoit: Large Withdrawal Made",
+            description: `Large Withdrawal from pool ${result.address}`,
+            alertId: "ICHI Forta 2 - Large Withdrawal to AV Made",
+            severity: FindingSeverity.Info,
+            type: FindingType.Info,
+            protocol: "ICHIV2",
+            metadata: {
+              address: result.address,
+              token0Amount: result.amount0BN.toString(),
+              token1Amount: result.amount1BN.toString(),
+              sender: result.sender,
+              value0USD: result.value0USDBN.toString(),
+              value1USD: result.value1USDBN.toString(),
+              withdrawalThresholdUSD: withdrawalThresholdUSDBN.toString(),
             },
           });
           findings.push(finding);

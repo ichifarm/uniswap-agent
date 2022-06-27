@@ -1,6 +1,6 @@
 {
-  "UniswapV3Factory": {
-    "address": "0x1F98431c8aD98523631AE4a59f267346ea31F984",
-    "abiFile": "UniswapV3Factory.json" 
+  "ICHIVaultFactory": {
+    "address": "0x5a40DFaF8C1115196A1CDF529F97122030F26112",
+    "abiFile": "ICHIVaultFactory.json" 
   }
 }
