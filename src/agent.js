@@ -1,5 +1,4 @@
 const BigNumber = require("bignumber.js");
-var timeseries = require("timeseries-analysis");
 const {
   Finding,
   FindingSeverity,
@@ -9,9 +8,8 @@ const {
 
 const {
   depositTrainingData,
-  depositWithdrawalData,
-  getDepositAverage,
-  getWithdrawalAverage,
+  getAverage,
+  withdrawalTrainingData,
 } = require("./agent.config");
 
 // use ethers.js for contracts, interfaces, and provider
@@ -173,9 +171,13 @@ function provideHandleTransaction(data) {
 
       // check each deposit for any that exceeded the threshold value
       depositResults.forEach((result) => {
-        let averageDeposit =  getDepositAverage();
+        let averageDeposit = getAverage(depositTrainingData);
         if (
-          result.amount0BN.plus(result.amount1BN).minus(averageDeposit).div(averageDeposit).gte(depositThresholdUSDBN)
+          result.amount0BN
+            .plus(result.amount1BN)
+            .minus(averageDeposit)
+            .div(averageDeposit)
+            .gte(depositThresholdUSDBN)
         ) {
           const finding = Finding.fromObject({
             name: "ICHI Depoit: Large Deposit Made",
@@ -199,7 +201,6 @@ function provideHandleTransaction(data) {
         } else {
           depositTrainingData.push(result.amount0BN.plus(result.amount1BN));
         }
-
       });
     }
 
@@ -290,9 +291,13 @@ function provideHandleTransaction(data) {
 
       // check each flash swap for any that exceeded the threshold value
       withdrawResults.forEach((result) => {
-        let averageWithdrawal =  getWithdrawalAverage();
+        let averageWithdrawal = getAverage(withdrawalTrainingData);
         if (
-          result.amount0BN.plus(result.amount1BN).minus(averageWithdrawal).div(averageWithdrawal).gte(withdrawalThresholdUSDBN)
+          result.amount0BN
+            .plus(result.amount1BN)
+            .minus(averageWithdrawal)
+            .div(averageWithdrawal)
+            .gte(withdrawalThresholdUSDBN)
         ) {
           const finding = Finding.fromObject({
             name: "ICHI Depoit: Large Withdrawal Made",

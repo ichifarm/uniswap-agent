@@ -19,12 +19,8 @@ const withdrawalTrainingData = [
 module.exports = {
   depositTrainingData: depositTrainingData,
   withdrawalTrainingData: withdrawalTrainingData,
-  getDepositAverage: () => {
-    const total = depositTrainingData.reduce((acc, c) => acc + c, 0);
-    return total / depositTrainingData.length;
+  getAverage: (array) => {
+    const total = array.reduce((acc, c) => acc + c, 0);
+    return total / array.length;
   },
-  getWithdrawalAverage: () => {
-    const total = withdrawalTrainingData.reduce((acc, c) => acc + c, 0);
-    return total / withdrawalTrainingData.length;
-  }, 
 };
