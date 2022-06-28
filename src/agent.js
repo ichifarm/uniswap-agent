@@ -171,7 +171,7 @@ function provideHandleTransaction(data) {
 
       // check each deposit for any that exceeded the threshold value
       depositResults.forEach((result) => {
-        let averageDeposit = getAverage(depositTrainingData);
+        const averageDeposit = new BigNumber(getAverage(depositTrainingData));
         if (
           result.amount0BN
             .plus(result.amount1BN)
@@ -291,7 +291,17 @@ function provideHandleTransaction(data) {
 
       // check each flash swap for any that exceeded the threshold value
       withdrawResults.forEach((result) => {
-        let averageWithdrawal = getAverage(withdrawalTrainingData);
+        const averageWithdrawal = new BigNumber(
+          getAverage(withdrawalTrainingData)
+        );
+        console.log(averageWithdrawal.toNumber());
+        console.log(
+          result.amount0BN
+            .plus(result.amount1BN)
+            .minus(averageWithdrawal)
+            .div(averageWithdrawal)
+            .toNumber()
+        );
         if (
           result.amount0BN
             .plus(result.amount1BN)

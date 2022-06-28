@@ -1,19 +1,11 @@
 // Set of normative deposit values
 const depositTrainingData = [
-    0,
-    0,
-    0,
-    0,
-    0,
+  2.00e+23,
 ];
 
 // Set of normative withdrawal values
 const withdrawalTrainingData = [
-    0,
-    0,
-    0,
-    0,
-    0,
+  7.00e+21,
 ];
 
 module.exports = {
