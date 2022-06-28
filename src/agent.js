@@ -1,10 +1,18 @@
 const BigNumber = require("bignumber.js");
+var timeseries = require("timeseries-analysis");
 const {
   Finding,
   FindingSeverity,
   FindingType,
   getJsonRpcUrl,
 } = require("forta-agent");
+
+const {
+  depositTrainingData,
+  depositWithdrawalData,
+  getDepositAverage,
+  getWithdrawalAverage,
+} = require("./agent.config");
 
 // use ethers.js for contracts, interfaces, and provider
 const ethers = require("ethers");
@@ -24,14 +32,11 @@ const initializeData = {};
 
 function provideInitialize(data) {
   return async function initialize() {
-    // store the Everest ID for the UniswapV3 protocol
-    /* eslint-disable no-param-reassign */
-
     // set up an ethers.js provider for interacting with contracts
     // getJsonRpcUrl() will return the JSON-RPC URL from forta.config.json
     data.provider = new ethers.providers.JsonRpcBatchProvider(getJsonRpcUrl());
 
-    // create an ethers.js Contract object for calling methods on the UniswapV3 factory contract
+    // create an ethers.js Contract object for calling methods on the ICHI Vault Factory contract
     data.factoryContract = new ethers.Contract(
       contractAddresses.ICHIVaultFactory.address,
       factoryAbi,
@@ -48,7 +53,9 @@ function provideInitialize(data) {
       config.largeWithdrawal.thresholdUSD
     );
 
-    // store the UniswapV2Pool contract ABI for use later
+    data.timestamp = Date.now() / 1000;
+
+    // store the ICHI Vault contract ABI for use later
     data.vaultAbi = vaultAbi;
     /* eslint-enable no-param-reassign */
   };
@@ -63,6 +70,7 @@ function provideHandleTransaction(data) {
       factoryContract,
       depositThresholdUSDBN,
       withdrawalThresholdUSDBN,
+      timestamp,
     } = data;
 
     if (!factoryContract)
@@ -76,12 +84,13 @@ function provideHandleTransaction(data) {
     const depositLogs = txEvent.filterEvent(depositSignature);
 
     // check for logs containing the Withdraw event signature {ICHI Vault}
-    const withdrawSignature = "Withdraw(address,address,uint256,uint256,uint256)";
+    const withdrawSignature =
+      "Withdraw(address,address,uint256,uint256,uint256)";
     const withdrawLogs = txEvent.filterEvent(withdrawSignature);
 
     // no deposits to the vaults, no findings
     if (depositLogs.length > 0) {
-      // iterate over the logs containing Flash events and return an Array of promises
+      // iterate over the logs containing deposit events and return an Array of promises
       const depositPromises = depositLogs.map(async (depositLog) => {
         // destructure the log
         const { address, data: eventData, topics } = depositLog;
@@ -148,6 +157,7 @@ function provideHandleTransaction(data) {
           sender,
           value0USDBN: new BigNumber(0),
           value1USDBN: new BigNumber(0),
+          timestamp: txEvent.timestamp,
         };
 
         return depositData;
@@ -158,18 +168,14 @@ function provideHandleTransaction(data) {
       // Consider Promise.allSettled() to ensure that all promises settle (fulfilled or rejected)
       let depositResults = await Promise.all(depositPromises);
 
-      console.log(depositResults[0].value1USDBN);
-      console.log(depositThresholdUSDBN);
-      
       // filter out undefined entries in the results
       depositResults = depositResults.filter((result) => result !== undefined);
 
-      // check each flash swap for any that exceeded the threshold value
+      // check each deposit for any that exceeded the threshold value
       depositResults.forEach((result) => {
+        let averageDeposit =  getDepositAverage();
         if (
-          result.amount0BN
-            .plus(result.amount1BN)
-            .gte(depositThresholdUSDBN)
+          result.amount0BN.plus(result.amount1BN).minus(averageDeposit).div(averageDeposit).gte(depositThresholdUSDBN)
         ) {
           const finding = Finding.fromObject({
             name: "ICHI Depoit: Large Deposit Made",
@@ -186,14 +192,18 @@ function provideHandleTransaction(data) {
               value0USD: result.value0USDBN.toString(),
               value1USD: result.value1USDBN.toString(),
               depositThresholdUSD: depositThresholdUSDBN.toString(),
+              timestamp: Date(txEvent.timestamp),
             },
           });
           findings.push(finding);
+        } else {
+          depositTrainingData.push(result.amount0BN.plus(result.amount1BN));
         }
+
       });
     }
 
-    // no withdrawals from the vaults, no findings
+    // check each withdrawal for any that exceeded the threshold value
     if (withdrawLogs.length > 0) {
       // iterate over the logs containing Flash events and return an Array of promises
       const withdrawPromises = withdrawLogs.map(async (withdrawLog) => {
@@ -262,6 +272,7 @@ function provideHandleTransaction(data) {
           sender,
           value0USDBN: new BigNumber(0),
           value1USDBN: new BigNumber(0),
+          timestamp: txEvent.timestamp,
         };
 
         return withdrawData;
@@ -279,10 +290,9 @@ function provideHandleTransaction(data) {
 
       // check each flash swap for any that exceeded the threshold value
       withdrawResults.forEach((result) => {
+        let averageWithdrawal =  getWithdrawalAverage();
         if (
-          result.amount0BN
-            .plus(result.amount1BN)
-            .gte(withdrawalThresholdUSDBN)
+          result.amount0BN.plus(result.amount1BN).minus(averageWithdrawal).div(averageWithdrawal).gte(withdrawalThresholdUSDBN)
         ) {
           const finding = Finding.fromObject({
             name: "ICHI Depoit: Large Withdrawal Made",
@@ -299,13 +309,15 @@ function provideHandleTransaction(data) {
               value0USD: result.value0USDBN.toString(),
               value1USD: result.value1USDBN.toString(),
               withdrawalThresholdUSD: withdrawalThresholdUSDBN.toString(),
+              timestamp: Date(txEvent.timestamp),
             },
           });
           findings.push(finding);
+        } else {
+          withdrawalTrainingData.push(result.amount0BN.plus(result.amount1BN));
         }
       });
     }
-
     return findings;
   };
 }

@@ -2,9 +2,9 @@
   "PROTOCOL_NAME": "ICHI V2",
   "PROTOCOL_ABBREVIATION": "ICHIV2",
   "largeDeposit": {
-    "thresholdUSD": 0
+    "thresholdUSD": 0.1
   },
   "largeWithdrawal": {
-    "thresholdUSD": 0
+    "thresholdUSD": 0.1
   }
 }

@@ -21,7 +21,8 @@
     "axios": "^0.24.0",
     "bignumber.js": "^9.0.1",
     "ethers": "^5.5.2",
-    "forta-agent": "^0.0.32"
+    "forta-agent": "^0.0.32",
+    "timeseries-analysis": "^1.0.12"
   },
   "devDependencies": {
     "eslint": "^8.4.1",
