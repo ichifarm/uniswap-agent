@@ -21,7 +21,10 @@
     "axios": "^0.24.0",
     "bignumber.js": "^9.0.1",
     "ethers": "^5.5.2",
+    "firebase": "^8.10.1",
+    "firebase-firestore-lite": "^1.0.3",
     "forta-agent": "^0.0.32",
+    "sqlite3": "^5.0.8",
     "timeseries-analysis": "^1.0.12"
   },
   "devDependencies": {

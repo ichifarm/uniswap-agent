@@ -7,9 +7,7 @@ const {
 } = require("forta-agent");
 
 const {
-  depositTrainingData,
-  getAverage,
-  withdrawalTrainingData,
+  db
 } = require("./agent.config");
 
 // use ethers.js for contracts, interfaces, and provider
@@ -171,7 +169,7 @@ function provideHandleTransaction(data) {
 
       // check each deposit for any that exceeded the threshold value
       depositResults.forEach((result) => {
-        const averageDeposit = new BigNumber(getAverage(depositTrainingData));
+        const averageDeposit = new BigNumber(db[result.address.toString()].averageDeposit);
         if (
           result.amount0BN
             .plus(result.amount1BN)
@@ -199,7 +197,10 @@ function provideHandleTransaction(data) {
           });
           findings.push(finding);
         } else {
-          depositTrainingData.push(result.amount0BN.plus(result.amount1BN));
+          let n = db[result.address.toString()].numNormalDeposits;  
+          console.log(`Vault was ${result.address}`);
+          console.log(`New SMA value - ${(averageDeposit.multipliedBy(n).plus(result.amount0BN.plus(result.amount1BN))).div(n + 1)}`);
+          console.log(`Num test points - ${n + 1}`);
         }
       });
     }
@@ -292,7 +293,7 @@ function provideHandleTransaction(data) {
       // check each flash swap for any that exceeded the threshold value
       withdrawResults.forEach((result) => {
         const averageWithdrawal = new BigNumber(
-          getAverage(withdrawalTrainingData)
+          db[result.address.toString()].averageWithdrawal
         );
         if (
           result.amount0BN
@@ -321,8 +322,10 @@ function provideHandleTransaction(data) {
           });
           findings.push(finding);
         } else {
-          console.log("HI");
-          withdrawalTrainingData.push(result.amount0BN.plus(result.amount1BN));
+          let n = db[result.address.toString()].numNormalWithdrawals;  
+          console.log(`Vault was ${result.address}`);
+          console.log(`New SMA value - ${(averageWithdrawal.multipliedBy(n).plus(result.amount0BN.plus(result.amount1BN))).div(n + 1)}`);
+          console.log(`Num test points - ${n + 1}`);
         }
       });
     }

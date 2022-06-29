@@ -1,27 +1,28 @@
 /*
-Will need to 
-- Create a mapping of every single pool address 
-- For each address, we store SMA and number of transactions included 
-- If value is not outlier, add it to database 
-- Check for outlier values using moving average 
-- Text user 
+Mock Database // No add or delete added yet
 */
 
-// Set of normative deposit values
-const depositTrainingData = [
-  2.00e+23,
-];
-
-// Set of normative withdrawal values
-const withdrawalTrainingData = [
-  7.00e+21,
-];
+const db = {
+  "0x784ac9aaeab58aaf904cc69e105aa51343e4c693": {
+    averageDeposit:44000000,
+    numNormalDeposits:2,
+    averageWithdrawal:0,
+    numNormalWithdrawals:2,
+  }, 
+  "0x46f9490bcbcd0a12d3d8578b5b3ab19f8ef0617d": {
+    averageDeposit:0,
+    numNormalDeposits:2,
+    averageWithdrawal:0,
+    numNormalWithdrawals:2,
+  }, 
+  "0x683f081dbc729dbd34abac708fa0b390d49f1c39": {
+    averageDeposit:0,
+    numNormalDeposits:2,
+    averageWithdrawal:0,
+    numNormalWithdrawals:2,
+  } 
+}
 
 module.exports = {
-  depositTrainingData: depositTrainingData,
-  withdrawalTrainingData: withdrawalTrainingData,
-  getAverage: (array) => {
-    const total = array.reduce((acc, c) => acc + c, 0);
-    return total / array.length;
-  },
+  db
 };
