@@ -294,14 +294,6 @@ function provideHandleTransaction(data) {
         const averageWithdrawal = new BigNumber(
           getAverage(withdrawalTrainingData)
         );
-        console.log(averageWithdrawal.toNumber());
-        console.log(
-          result.amount0BN
-            .plus(result.amount1BN)
-            .minus(averageWithdrawal)
-            .div(averageWithdrawal)
-            .toNumber()
-        );
         if (
           result.amount0BN
             .plus(result.amount1BN)
@@ -329,6 +321,7 @@ function provideHandleTransaction(data) {
           });
           findings.push(finding);
         } else {
+          console.log("HI");
           withdrawalTrainingData.push(result.amount0BN.plus(result.amount1BN));
         }
       });
